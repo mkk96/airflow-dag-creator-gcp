@@ -37,6 +37,7 @@ that generates Cloud Composer DAGs in the browser. These rules are mandatory for
 - Unique runtime resource names (Dataproc clusters, Dataflow / Cloud Run jobs) are lowercase with hyphens and include the dag_id and a run-date suffix.
 
 ## Docs
+- Every form parameter needs a tooltip explanation: a `FIELD_DOCS` entry in `src/config/fieldDocs.ts` for keys shared across scenarios, or a field `tooltip` / `help` for scenario-specific meanings. A unit test enforces this.
 - `README.md` is the user guide for the hosted site (https://mkk96.github.io/airflow-dag-creator-gcp/). It covers using the app and deploying its output only, never local setup or code. When a scenario or field changes, update its section there.
 - Developer docs (local setup, tests, adding scenarios, CI/deploy) go in `DEVELOPMENT.md`.
 

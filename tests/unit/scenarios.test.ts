@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { exportConfig, importConfig } from "../../src/lib/configIO";
+import { fieldTooltip } from "../../src/lib/fieldTooltip";
 import { isPyIdentifier } from "../../src/lib/python";
 import { suggestNames } from "../../src/lib/suggest";
 import {
@@ -27,6 +28,12 @@ describe.each(SCENARIOS.map((s) => [s.id, s] as const))("scenario %s — contrac
       }
       if (f.envSpecific) expect(isPyIdentifier(f.key), `${f.key} must be an identifier`).toBe(true);
     }
+  });
+
+  it("every parameter has a tooltip explanation", () => {
+    const p = defaultParams(s);
+    const missing = allFields(s).filter((f) => fieldTooltip(f, p).text.trim().length < 15).map((f) => f.key);
+    expect(missing, "add FIELD_DOCS entries (src/config/fieldDocs.ts) or help text").toEqual([]);
   });
 
   it("defaults are valid and generate a DAG", () => {

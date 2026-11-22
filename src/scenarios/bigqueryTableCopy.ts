@@ -46,6 +46,7 @@ export const bigqueryTableCopy: Scenario = {
       key: "source_dataset", label: "Source dataset", type: "text", section: "source", default: "stg_reporting",
       required: true, envSpecific: true, suggestable: true, validate: (x) => v.bqDataset(String(x)),
       help: "Env-specific.",
+      tooltip: "Dataset that holds the tables to copy. It sits in the source project (or the job project when Source project is empty). Env-specific: dev/stg/prd values are derived from what you type.",
     },
     {
       key: "source_tables", label: "Source tables", type: "list", section: "source", default: ["orders"],
@@ -62,6 +63,7 @@ export const bigqueryTableCopy: Scenario = {
       key: "destination_dataset", label: "Destination dataset", type: "text", section: "destination",
       default: "curated_reporting", required: true, envSpecific: true, suggestable: true,
       validate: (x) => v.bqDataset(String(x)), help: "Env-specific.",
+      tooltip: "Dataset the copy is written into, in the destination project (or the job project when Destination project is empty). Convention: {layer}_{domain}. Env-specific.",
     },
     {
       key: "destination_table", label: "Destination table", type: "text", section: "destination", default: "orders",

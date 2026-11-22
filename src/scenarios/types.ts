@@ -27,6 +27,11 @@ export interface FieldSchema {
   section: string;
   default: ParamValue;
   help?: string | ((p: Params) => string);
+  /**
+   * Longer explanation for the field's ⓘ tooltip. Optional: falls back to
+   * FIELD_DOCS[key] (src/config/fieldDocs.ts), then to `help`.
+   */
+  tooltip?: string;
   placeholder?: string;
   required?: boolean;
   options?: FieldOption[];

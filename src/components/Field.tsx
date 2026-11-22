@@ -1,7 +1,9 @@
 import CodeMirror from "@uiw/react-codemirror";
 import { CircleX, TriangleAlert, Upload } from "lucide-react";
 import { useId, useRef } from "react";
+import { fieldTooltip } from "../lib/fieldTooltip";
 import { languageFor } from "../lib/languages";
+import { InfoTip } from "./InfoTip";
 import type { FieldSchema, ParamValue, Params } from "../scenarios/types";
 import type { Issues } from "../validation/rules";
 
@@ -67,7 +69,10 @@ export function Field({ field, value, params, issues, onChange }: Props) {
     case "boolean":
       control = (
         <label htmlFor={id} className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 transition hover:border-slate-300">
-          <span className="text-sm font-medium text-slate-800">{field.label}</span>
+          <span className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
+            {field.label}
+            <InfoTip content={fieldTooltip(field, params)} />
+          </span>
           <Switch id={id} checked={value === true} onChange={onChange} />
         </label>
       );
@@ -205,6 +210,7 @@ export function Field({ field, value, params, issues, onChange }: Props) {
         <label htmlFor={id} className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-700">
           {field.label}
           {field.required && <span className="text-red-500">*</span>}
+          <InfoTip content={fieldTooltip(field, params)} />
           {field.envSpecific && (
             <span
               className="rounded-md bg-violet-100 px-1.5 py-px text-[9.5px] font-bold tracking-wider text-violet-700 uppercase"

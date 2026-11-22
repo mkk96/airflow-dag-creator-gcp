@@ -23,7 +23,53 @@ import { type ComposerEnvironment, deploy, getEnvironment, listEnvironments, typ
 import { type AccessToken, BUILT_IN_CLIENT_ID, signIn, signOut } from "../lib/deploy/googleAuth";
 import { buildPlan, COMPOSER_REGIONS, defaultTarget, type DeployTarget, validateTarget } from "../lib/deploy/plan";
 import { renderDeployScript } from "../lib/deploy/script";
+import type { TooltipContent } from "../lib/fieldTooltip";
 import type { GeneratedBundle } from "../scenarios/types";
+import { InfoTip } from "./InfoTip";
+
+const tip = (title: string, text: string, example?: string): TooltipContent => ({
+  title,
+  text,
+  example,
+  envSpecific: false,
+  allowJinja: false,
+  required: false,
+});
+
+const TIPS = {
+  project: tip(
+    "Composer project ID",
+    "The GCP project that hosts your Cloud Composer environment. It can differ from the project your data lives in.",
+    "acme-prd-composer",
+  ),
+  region: tip("Region", "The region the Composer environment runs in. You can see it on the Composer environments page in the Cloud console.", "northamerica-northeast1"),
+  environment: tip(
+    "Environment name",
+    "The Composer environment's name (not its Airflow URL). After signing in, 'Find' lists the environments in this project and region.",
+    "composer-prd",
+  ),
+  targetEnv: tip(
+    "Which environment is it?",
+    "Pick the tier this Composer environment represents. The DAG chooses the dev/stg/prd values by reading the DEPLOY_ENV environment variable on the environment, so DEPLOY_ENV must equal this. The deploy stops if it doesn't, unless you allow it to be set.",
+  ),
+  setVariable: tip(
+    "Set Airflow Variable",
+    "Variables mode: writes this environment's values (project, buckets, datasets…) into the JSON Airflow Variable the DAG reads at run time, via the Composer API (airflow variables set). Re-running overwrites it with the same values.",
+  ),
+  uploadScripts: tip(
+    "Upload scripts",
+    "Copies scripts/<dag_id>/ (e.g. the PySpark job) to the code bucket, where the DAG expects them by gs:// URI. Untick it if your CI/CD deploys the scripts.",
+  ),
+  codeBucket: tip("Code bucket", "Bucket the DAG reads scripts from, pre-filled from the form for the selected environment. The scripts land under gs://<bucket>/scripts/<dag_id>/.", "acme-prd-ml-code"),
+  setDeployEnv: tip(
+    "Set DEPLOY_ENV",
+    "If the environment's DEPLOY_ENV is missing or different, update it to the selected env. Composer then restarts its Airflow components, which takes about 10–25 minutes; other environment variables are kept. New DAGs start paused, so unpause yours after the update finishes.",
+  ),
+  clientId: tip(
+    "OAuth Client ID",
+    "Needed for 'Sign in with Google'. Create one in your GCP project (APIs & Services → Credentials → OAuth client ID, type Web application) with this site as an authorized JavaScript origin. It's stored only in this browser. The Cloud Shell script doesn't need it.",
+  ),
+};
 
 interface Props {
   bundle: GeneratedBundle;
@@ -202,12 +248,12 @@ export function DeployDialog({ bundle, onClose, notify }: Props) {
               </h3>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1 text-[12px] font-semibold text-slate-700">
-                  Composer project ID
+                  <span className="flex items-center gap-1.5">Composer project ID <InfoTip content={TIPS.project} /></span>
                   <input className={input} placeholder="e.g. acme-prd-composer" value={target.project} onChange={(e) => set("project", e.target.value.trim())} spellCheck={false} />
                   {target.project && errors.project && <span className="text-[11px] font-medium text-red-600">{errors.project}</span>}
                 </label>
                 <label className="flex flex-col gap-1 text-[12px] font-semibold text-slate-700">
-                  Region
+                  <span className="flex items-center gap-1.5">Region <InfoTip content={TIPS.region} /></span>
                   <input className={input} placeholder="e.g. northamerica-northeast1" list="composer-regions" value={target.region} onChange={(e) => set("region", e.target.value.trim())} spellCheck={false} />
                   <datalist id="composer-regions">
                     {COMPOSER_REGIONS.map((r) => (
@@ -217,7 +263,7 @@ export function DeployDialog({ bundle, onClose, notify }: Props) {
                   {target.region && errors.region && <span className="text-[11px] font-medium text-red-600">{errors.region}</span>}
                 </label>
                 <label className="flex flex-col gap-1 text-[12px] font-semibold text-slate-700 sm:col-span-2">
-                  Environment name
+                  <span className="flex items-center gap-1.5">Environment name <InfoTip content={TIPS.environment} /></span>
                   <div className="flex gap-2">
                     <input className={input} placeholder="e.g. composer-prd" list="composer-envs" value={target.environment} onChange={(e) => set("environment", e.target.value.trim())} spellCheck={false} />
                     <datalist id="composer-envs">
@@ -246,6 +292,7 @@ export function DeployDialog({ bundle, onClose, notify }: Props) {
               <h3 className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-slate-800">
                 <span className="grid h-5 w-5 place-items-center rounded-full bg-indigo-100 text-[11px] text-indigo-700">2</span>
                 Which environment is it?
+                <InfoTip content={TIPS.targetEnv} />
               </h3>
               <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                 {ENVIRONMENTS.map((e) => (
@@ -273,17 +320,18 @@ export function DeployDialog({ bundle, onClose, notify }: Props) {
               </h3>
               {variable && (
                 <Toggle checked={target.setVariable} onChange={(v) => set("setVariable", v)}>
-                  Set Airflow Variable <code className="font-mono text-[12px]">{variable.name}</code> with this env's values
+                  Set Airflow Variable <code className="font-mono text-[12px]">{variable.name}</code> with this env's values{" "}
+                  <InfoTip content={TIPS.setVariable} />
                 </Toggle>
               )}
               {bundle.deploy.codeBuckets && (
                 <div className="flex flex-col gap-1.5">
                   <Toggle checked={target.uploadScripts} onChange={(v) => set("uploadScripts", v)}>
-                    Upload scripts to the code bucket
+                    Upload scripts to the code bucket <InfoTip content={TIPS.uploadScripts} />
                   </Toggle>
                   {target.uploadScripts && (
                     <label className="flex flex-col gap-1 pl-1 text-[12px] font-semibold text-slate-700">
-                      Code bucket
+                      <span className="flex items-center gap-1.5">Code bucket <InfoTip content={TIPS.codeBucket} /></span>
                       <input className={input} value={target.codeBucket} onChange={(e) => set("codeBucket", e.target.value.trim())} spellCheck={false} />
                       {errors.codeBucket && <span className="text-[11px] font-medium text-red-600">{errors.codeBucket}</span>}
                     </label>
@@ -291,7 +339,8 @@ export function DeployDialog({ bundle, onClose, notify }: Props) {
                 </div>
               )}
               <Toggle checked={target.setDeployEnv} onChange={(v) => set("setDeployEnv", v)}>
-                Set <code className="font-mono text-[12px]">{envVar}={target.targetEnv}</code> on the environment if it's missing or different
+                Set <code className="font-mono text-[12px]">{envVar}={target.targetEnv}</code> on the environment if it's missing or different{" "}
+                <InfoTip content={TIPS.setDeployEnv} />
                 <span className="mt-0.5 block text-[11px] text-amber-700">Restarts Airflow components (10–25 min). Usually a one-time step per environment.</span>
               </Toggle>
             </section>
@@ -373,7 +422,7 @@ export function DeployDialog({ bundle, onClose, notify }: Props) {
                 )}
                 {!BUILT_IN_CLIENT_ID && (
                   <label className="flex flex-col gap-1 text-[12px] font-semibold text-slate-700">
-                    OAuth Client ID
+                    <span className="flex items-center gap-1.5">OAuth Client ID <InfoTip content={TIPS.clientId} /></span>
                     <input className={input} placeholder="1234567890-abc….apps.googleusercontent.com" value={clientId} onChange={(e) => setClientId(e.target.value.trim())} spellCheck={false} />
                   </label>
                 )}

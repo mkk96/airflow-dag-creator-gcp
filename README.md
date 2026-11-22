@@ -42,6 +42,8 @@ Build production-ready Airflow DAGs for **Cloud Composer 2 / 3** without writing
 
 Sections can be collapsed. Each section header shows a green dot when it's complete, or a count of errors (red) and warnings (amber). Fields tagged **ENV** are environment-specific.
 
+Every parameter has an **ⓘ** icon next to its name. Hover over it, tab to it, or tap it to see what the parameter does, its options, its default, an example, and whether it's env-specific or accepts Airflow macros. Press Esc to close.
+
 ### DAG
 - **DAG id**: also the file name (`<dag_id>.py`). Suggested format: `{domain}_{source}_to_{target}_{frequency}`, e.g. `sales_gcs_to_bq_daily`.
 - **Description, Owner, Alert emails, Tags**: appear in the Airflow UI and in the DAG's documentation panel. The owner also becomes a cost label.
