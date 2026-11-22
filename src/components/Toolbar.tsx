@@ -1,4 +1,4 @@
-import { CircleCheck, CircleX, ClipboardCopy, Download, FileCode, Package, TriangleAlert, Upload } from "lucide-react";
+import { CircleCheck, CircleX, ClipboardCopy, Download, FileCode, Package, Rocket, TriangleAlert, Upload } from "lucide-react";
 import { useRef } from "react";
 import type { GeneratedBundle } from "../scenarios/types";
 
@@ -9,6 +9,7 @@ interface Props {
   onShowIssues: () => void;
   onDownloadPy: () => void;
   onDownloadZip: () => void;
+  onDeploy: () => void;
   onCopy: () => void;
   onExport: () => void;
   onImport: (text: string) => void;
@@ -21,7 +22,7 @@ const ghost = `${btn} border border-slate-200 bg-white text-slate-700 shadow-xs 
 const primary = `${btn} bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25 hover:shadow-lg hover:shadow-indigo-500/35`;
 
 export function Toolbar(props: Props) {
-  const { bundle, errors, warnings, onShowIssues, onDownloadPy, onDownloadZip, onCopy, onExport, onImport } = props;
+  const { bundle, errors, warnings, onShowIssues, onDownloadPy, onDownloadZip, onDeploy, onCopy, onExport, onImport } = props;
   const fileRef = useRef<HTMLInputElement>(null);
   const blocked = errors > 0 || !bundle;
   const blockedTitle = errors > 0 ? "Fix the errors in the form first" : undefined;
@@ -87,6 +88,14 @@ export function Toolbar(props: Props) {
         onClick={onDownloadZip}
       >
         <Package className="h-4 w-4" /> .zip
+      </button>
+      <button
+        className={`${btn} bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/25 hover:shadow-lg hover:shadow-emerald-500/35`}
+        disabled={blocked}
+        title={blockedTitle ?? "Upload this DAG straight to your Cloud Composer environment"}
+        onClick={onDeploy}
+      >
+        <Rocket className="h-4 w-4" /> Deploy to GCP
       </button>
     </div>
   );

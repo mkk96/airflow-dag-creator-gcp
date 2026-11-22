@@ -108,6 +108,29 @@ Workflows:
 - [`test.yml`](.github/workflows/test.yml) runs on every pull request. It runs typecheck, lint, unit tests, build and sample generation. It then installs Airflow and providers-google using the official constraints file (versions from `runtime.config.json`) and runs pytest, ruff and sqlfluff.
 - [`deploy.yml`](.github/workflows/deploy.yml) runs on push to `main`. It runs `test.yml`, then builds with the Pages base path and deploys.
 
+## Enable "Deploy now" (Google sign-in), one-time
+
+**Deploy to GCP → Cloud Shell script** works with no setup. **Deploy now** calls the Composer and Cloud Storage APIs from the browser with the user's own Google token, which needs an OAuth Client ID:
+
+1. In any GCP project you own, go to **APIs & Services → OAuth consent screen**:
+   - User type **Internal** if everyone is in your Google Workspace org. No review is needed.
+   - Otherwise **External**. While it's in *Testing*, add users under *Test users*.
+   - Add the scope `https://www.googleapis.com/auth/cloud-platform`.
+2. Go to **APIs & Services → Credentials → Create credentials → OAuth client ID** and choose type **Web application**:
+   - Authorized JavaScript origins: `https://mkk96.github.io`, plus `http://localhost:5173` for local dev.
+   - No redirect URIs are needed.
+3. In the GitHub repo, go to **Settings → Secrets and variables → Actions → Variables** and add `GOOGLE_OAUTH_CLIENT_ID` = the client ID (`…apps.googleusercontent.com`). It's public by design; never add the client secret.
+4. Re-run **Deploy to GitHub Pages**. The build reads it as `VITE_GOOGLE_CLIENT_ID`.
+
+Without the variable, users can still paste their own client ID in the dialog (stored in their browser only).
+
+How it works ([`src/lib/deploy/`](src/lib/deploy/)):
+- `plan.ts` builds the ordered steps that both modes share: Variable → scripts → SQL → DAG last.
+- `gcp.ts` makes the REST calls: `environments.get`, `executeAirflowCommand` / `pollAirflowCommand` for `variables set`, a merged `envVariables` PATCH for `DEPLOY_ENV`, and Cloud Storage media uploads.
+- `script.ts` writes the bash script with base64-embedded files.
+- `googleAuth.ts` handles the Google Identity Services token client. The token is held in memory only.
+- `tests/unit/deploy.test.ts` runs the generated script against a fake `gcloud` and checks the uploads byte for byte. It also exercises the browser client against a mocked `fetch`.
+
 ## Change the target runtime
 
 Edit [`runtime.config.json`](runtime.config.json). The UI badge, the generated headers and CI's constraints URL all read from it. After bumping `airflowVersion`, set `googleProviderVersion` to the version pinned in the new constraints file. Otherwise CI's install fails, which is intentional.

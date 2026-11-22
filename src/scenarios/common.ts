@@ -31,7 +31,7 @@ import {
   type Py,
 } from "../lib/python";
 import * as v from "../validation/rules";
-import type { FieldSchema, GeneratedBundle, GeneratedFile, Params, Scenario, Section } from "./types";
+import type { DeployInfo, FieldSchema, GeneratedBundle, GeneratedFile, Params, Scenario, Section } from "./types";
 
 // ---------------------------------------------------------------------------
 // Param accessors
@@ -476,7 +476,22 @@ export class DagContext {
     }
     const needsZip = files.some((f) => f.role !== "dag");
     files.push({ path: "README.md", content: this.renderReadme(opts, files), language: "markdown", role: "readme" });
-    return { dagId: this.dagId, files, needsZip };
+    return { dagId: this.dagId, files, needsZip, deploy: this.deployInfo(opts) };
+  }
+
+  private deployInfo(opts: AssembleOptions): DeployInfo {
+    const byEnv = <T,>(f: (e: EnvCode) => T) => Object.fromEntries(ENVIRONMENTS.map((e) => [e, f(e)])) as Record<string, T>;
+    const codeKey = this.codeBucketKey;
+    return {
+      deployEnvVar: DEPLOY_ENV_VAR,
+      configMode: this.mode,
+      variables:
+        this.mode === "variables" ? byEnv((e) => ({ name: this.variableName(e), value: this.envValues(e) })) : null,
+      codeBuckets:
+        this.scripts.length && codeKey ? byEnv((e) => String(this.envValues(e)[codeKey] ?? "")) : null,
+      iamRoles: opts.iamRoles,
+      formEnv: this.env,
+    };
   }
 
   variableName(env: EnvCode): string {

@@ -17,7 +17,7 @@ Build production-ready Airflow DAGs for **Cloud Composer 2 / 3** without writing
 3. In **Environment, naming & labels**, click **Suggest names** to fill in the DAG id, bucket and dataset names from your org, environment and domain.
 4. Fix anything marked in **red**. **Amber** items are suggestions. The status pill above the code shows the count; click it to jump to the first issue.
 5. Check the generated code in the preview on the right. Use the file tabs to see the DAG, any SQL files, the Variables file and the deployment README.
-6. Click **.zip**, or **.py** for simple DAGs (the recommended one is highlighted), and deploy it (see [Deploy the DAG to Composer](#deploy-the-dag-to-composer)).
+6. Click **Deploy to GCP** to send it straight to your Composer environment, or download it with **.zip** / **.py** (the recommended one is highlighted) (see [Deploy to GCP from the app](#deploy-to-gcp-from-the-app)).
 
 ## Available scenarios
 
@@ -204,9 +204,39 @@ What's inside the `.zip`:
 └── README.md                          (commands, environment values, IAM roles for this DAG)
 ```
 
-## Deploy the DAG to Composer
+## Deploy to GCP from the app
 
-Each download includes a README with these commands already filled in for your DAG.
+Click **Deploy to GCP** (next to the download buttons) to send the DAG straight to your Cloud Composer environment. The dialog asks for:
+
+| You provide | Example | Why |
+|---|---|---|
+| **Composer project ID** | `acme-prd-composer` | The project that hosts the environment |
+| **Region** | `northamerica-northeast1` | Where the environment runs |
+| **Environment name** | `composer-prd` | Which Composer environment to deploy to (**Find** lists them after sign-in) |
+| **Which environment is it?** | `dev` / `stg` / `prd` | The DAG picks that env's values. The environment's `DEPLOY_ENV` must match. |
+| **Options** | | Set the Airflow Variable (Variables mode), upload scripts to the code bucket (Dataproc), and set `DEPLOY_ENV` on the environment if it's missing or different |
+
+**What will happen** shows the exact steps before anything runs:
+1. Check that the environment is running and `DEPLOY_ENV` matches. If it doesn't match, the deploy stops, unless you ticked the option to set it.
+2. Set the Airflow Variable (Variables mode only).
+3. Upload scripts to the code bucket (Dataproc only).
+4. Upload the SQL files, then the DAG last, so the DAG never appears without its SQL.
+
+Then choose how to run it:
+
+- **Deploy now**: click **Sign in with Google**, then **Check environment** (optional) and **Deploy**. Progress is shown live, with a link to open the DAG in Airflow when it's done. Your access token stays in the browser tab and goes only to Google APIs.
+- **Cloud Shell script**: click **Copy script**, open [Cloud Shell](https://shell.cloud.google.com/?show=terminal), paste and press Enter. Or click **Download .sh** and run `bash deploy_<dag_id>.sh` anywhere `gcloud` is signed in. The files are embedded in the script, so there's nothing else to upload. This works even if "Deploy now" isn't enabled on the site.
+
+**Permissions you need (the person deploying)**
+- `roles/composer.environmentAndStorageObjectAdmin` on the Composer project, or `roles/composer.user` plus `roles/storage.objectAdmin` on the environment's bucket.
+- `roles/storage.objectAdmin` on the code bucket, for Dataproc scripts.
+- Setting `DEPLOY_ENV` updates the environment and restarts Airflow components (10–25 minutes). It's usually a one-time step per environment. New DAGs start paused, so unpause yours after the update finishes.
+
+The dialog also lists the roles the **Composer service account** needs at run time for your scenario.
+
+## Deploy manually with gcloud
+
+If you downloaded the `.zip`, its README has these commands already filled in for your DAG.
 
 ```bash
 COMPOSER_ENV="your-composer-env"

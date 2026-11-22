@@ -79,6 +79,22 @@ export interface GeneratedBundle {
   files: GeneratedFile[];
   /** True when the DAG needs files besides the .py (SQL, scripts, variables). */
   needsZip: boolean;
+  /** Everything "Deploy to GCP" needs besides the files. */
+  deploy: DeployInfo;
+}
+
+export interface DeployInfo {
+  /** Environment variable the DAG reads to pick dev / stg / prd. */
+  deployEnvVar: string;
+  configMode: "config_dict" | "variables";
+  /** env code -> the Airflow Variable to set (Variables mode only). */
+  variables: Record<string, { name: string; value: Record<string, string | string[]> }> | null;
+  /** env code -> code bucket that scripts/<dag_id>/ must be uploaded to (when there are scripts). */
+  codeBuckets: Record<string, string> | null;
+  /** IAM roles the Composer (or impersonated) service account needs at run time. */
+  iamRoles: string[];
+  /** The env code the form values were entered for. */
+  formEnv: string;
 }
 
 export interface NamingContext {

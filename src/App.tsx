@@ -1,6 +1,7 @@
 import { CircleCheck, CircleX, Lock, RotateCcw, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CodePreview } from "./components/CodePreview";
+import { DeployDialog } from "./components/DeployDialog";
 import { DynamicForm } from "./components/DynamicForm";
 import { ScenarioPicker } from "./components/ScenarioPicker";
 import { Toolbar } from "./components/Toolbar";
@@ -53,6 +54,7 @@ export default function App() {
   const scenario = getScenario(scenarioId) ?? SCENARIOS[0];
   const [params, setParams] = useState<Params>(() => loadSaved(scenario));
   const [activePath, setActivePath] = useState("");
+  const [deployOpen, setDeployOpen] = useState(false);
   const [toast, setToast] = useState<{ text: string; kind: "ok" | "error" } | null>(null);
 
   useEffect(() => {
@@ -220,6 +222,7 @@ export default function App() {
             onShowIssues={onShowIssues}
             onDownloadPy={onDownloadPy}
             onDownloadZip={onDownloadZip}
+            onDeploy={() => setDeployOpen(true)}
             onCopy={onCopy}
             onExport={onExport}
             onImport={onImport}
@@ -231,6 +234,10 @@ export default function App() {
           )}
         </section>
       </main>
+
+      {deployOpen && bundle && errors === 0 && (
+        <DeployDialog bundle={bundle} onClose={() => setDeployOpen(false)} notify={notify} />
+      )}
 
       {toast && (
         <div
