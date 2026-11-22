@@ -516,7 +516,10 @@ export const gcsToBigquery: Scenario = {
           ["labels", pyName("LABELS")],
           ["gcp_conn_id", pyName("GCP_CONN_ID")],
           ["impersonation_chain", ctx.impersonationChain()],
-          ["deferrable", ctx.deferrable()],
+          // Not deferrable on purpose: in providers-google 12.0.0 the deferrable path of
+          // BigQueryCheckOperator drops `labels`, and labels on every job are a standard.
+          // The check is a seconds-long query, so it barely holds a worker slot.
+          ["deferrable", pyBool(false)],
         ],
         { explode: true },
       );

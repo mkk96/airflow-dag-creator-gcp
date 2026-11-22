@@ -18,7 +18,7 @@ if [ ! -d generated ]; then
 fi
 
 docker run --rm -v "$PWD":/work -w /work "python:${PYTHON}-slim" bash -euo pipefail -c "
-  pip install -q 'apache-airflow==${AIRFLOW}' 'apache-airflow-providers-google==${GOOGLE}' pytest --constraint '${CONSTRAINTS}'
+  pip install -q 'apache-airflow==${AIRFLOW}' 'apache-airflow-providers-google==${GOOGLE}' apache-airflow-providers-apache-beam apache-airflow-providers-openlineage pytest --constraint '${CONSTRAINTS}'
   export AIRFLOW_HOME=/tmp/airflow-home
   airflow db migrate > /dev/null
   pytest tests/dags -q

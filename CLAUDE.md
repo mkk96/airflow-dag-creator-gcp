@@ -40,6 +40,19 @@ that generates Cloud Composer DAGs in the browser. These rules are mandatory for
 - `README.md` is the user guide for the hosted site (https://mkk96.github.io/airflow-dag-creator-gcp/). It covers using the app and deploying its output only, never local setup or code. When a scenario or field changes, update its section there.
 - Developer docs (local setup, tests, adding scenarios, CI/deploy) go in `DEVELOPMENT.md`.
 
+## Provider gotchas found so far (providers-google 12.0.0)
+- `BigQueryCheckOperator` / `BigQueryValueCheckOperator` drop `labels` on their deferrable path. Emit them with `deferrable=False`; labels are the standard.
+- The Google provider's Dataflow and Dataproc modules import the apache-beam and openlineage providers. CI and `scripts/test-dags.sh` install both (Composer images ship them).
+- `DataformWorkflowInvocationStateSensor` isn't deferrable, and only `workflow_invocation_id` is templated. The Dataform scenario emits a small subclass and uses reschedule mode.
+- Pub/Sub message `data` must be bytes and isn't templated. Put run-specific values in attributes.
+- `CloudSQLExportInstanceOperator.body` is templated without `template_ext`. Load the query with `{% include 'NN_x.sql' %}`.
+- Sensors that wait a long time need `execution_timeout` > sensor timeout, because Airflow caps deferral at `execution_timeout`.
+
+## Shared helpers that live in scenario files (move to common.ts when convenient)
+- `gcsSensorLoadArchive.ts`: landing, format, destination and archive field factories, load-config builders, sensor/archive/check tasks, `>>` chain wrapping. Used by `cloudsqlToBigquery.ts` and `fullElt.ts`.
+- `bigquerySqlTransform.ts`: SQL heuristics, `{{ cfg.x }}` / `{{ params.x }}` checks, the dependency-chain emitter. Used by the other BigQuery scenarios.
+- `dataflowTemplate.ts`: `{{ cfg.x }}` resolution in free text, key=value parsing, region/subnetwork/machine-type validators. `dataprocEphemeral.ts`: Spark job fields and spec, PySpark starter script. Used by both Dataproc scenarios.
+
 ## Checks before you finish
 ```bash
 npm run typecheck && npm run lint && npm test && npm run build && npm run generate

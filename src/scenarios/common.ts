@@ -310,6 +310,8 @@ export class DagContext {
   private readonly fromImports = new Map<string, Set<string>>();
   private readonly plainImports = new Set<string>(["logging", "os", "pendulum"]);
   private readonly sql: SqlFile[] = [];
+  private readonly scripts: SqlFile[] = [];
+  private codeBucketKey: string | null = null;
 
   constructor(
     readonly scenario: Scenario,
@@ -385,6 +387,56 @@ export class DagContext {
     return pyName("IMPERSONATION_CHAIN");
   }
 
+  /**
+   * Sensor kwargs following the standards: deferrable when enabled, otherwise
+   * mode="reschedule"; always a timeout and poke interval.
+   */
+  sensorKwargs(timeoutMinutes: number, pokeIntervalSeconds = 60): Array<[string, Py]> {
+    const out: Array<[string, Py]> = bool(this.p, "deferrable")
+      ? [["deferrable", pyBool(true)]]
+      : [["mode", pyStr("reschedule")]];
+    out.push(["poke_interval", pyInt(Math.max(1, Math.round(pokeIntervalSeconds)))]);
+    out.push(["timeout", pyInt(Math.max(1, Math.round(timeoutMinutes * 60)))]);
+    return out;
+  }
+
+  /**
+   * Jinja template for a runtime-unique GCP resource name (Dataproc cluster,
+   * Dataproc batch, Dataflow / Cloud Run job): lowercase dag_id with hyphens
+   * plus a run-date suffix, within `maxLength` once rendered.
+   *   suffix "ds" -> -YYYYMMDD       (one per day)
+   *   suffix "ts" -> -YYYYMMDDtHHMMSS (one per run, e.g. hourly)
+   */
+  resourceName(opts: { prefix?: string; suffix?: "ds" | "ts"; maxLength?: number } = {}): string {
+    const suffix = opts.suffix ?? "ds";
+    const maxLength = opts.maxLength ?? 63;
+    const suffixJinja = suffix === "ts" ? "{{ ts_nodash | lower }}" : "{{ ds_nodash }}";
+    const suffixLen = (suffix === "ts" ? 15 : 8) + 1;
+    let base = `${opts.prefix ? `${opts.prefix}-` : ""}${this.dagId}`
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^[^a-z]+/, "")
+      .replace(/-+$/, "");
+    if (!base) base = "airflow";
+    base = base.slice(0, maxLength - suffixLen).replace(/-+$/, "");
+    return `${base}-${suffixJinja}`;
+  }
+
+  // -- scripts ---------------------------------------------------------------------
+
+  /**
+   * Register a script (PySpark / Spark / Beam) shipped in the bundle under
+   * scripts/<dag_id>/<name>; returns the gs:// URI (Jinja, templated fields only)
+   * where it must be uploaded in the env-specific code bucket field `codeBucketKey`.
+   */
+  addScript(name: string, content: string, codeBucketKey: string): string {
+    if (!/^[A-Za-z0-9_.-]+$/.test(name) || name.startsWith(".")) throw new Error(`Unsafe script name ${name}`);
+    this.codeBucketKey = codeBucketKey;
+    this.scripts.push({ name, content: content.endsWith("\n") ? content : content + "\n" });
+    return `gs://${this.ref(codeBucketKey)}/scripts/${this.dagId}/${name}`;
+  }
+
   // -- SQL ------------------------------------------------------------------------
 
   /** Register a SQL file; returns its template path relative to template_searchpath. */
@@ -410,6 +462,9 @@ export class DagContext {
     files.push({ path: dagPath, content: this.renderDagFile(opts), language: "python", role: "dag" });
     for (const f of this.sql) {
       files.push({ path: `dags/sql/${this.dagId}/${f.name}`, content: f.content, language: "sql", role: "sql" });
+    }
+    for (const f of this.scripts) {
+      files.push({ path: `scripts/${this.dagId}/${f.name}`, content: f.content, language: "python", role: "script" });
     }
     if (this.mode === "variables") {
       files.push({
@@ -582,7 +637,7 @@ export class DagContext {
         chain.length ? pyList(chain.map((_, i) => pyStr(this.ref("impersonation_chain", i)))) : pyNone,
       ),
       "",
-      comment(`GCP labels for cost tracking, applied to every BigQuery job (${TEAM.requiredLabels.join(", ")}).`),
+      comment(`GCP labels for cost tracking on every job/resource (${TEAM.requiredLabels.join(", ")}).`),
       assign("LABELS", labels),
     ];
     if (hasSql) {
@@ -764,7 +819,9 @@ export class DagContext {
         `### ${step}. Upload scripts to the code bucket`,
         "",
         "```bash",
-        `gcloud storage cp --recursive scripts/${this.dagId} gs://YOUR-CODE-BUCKET/scripts/`,
+        `gcloud storage cp --recursive scripts/${this.dagId} gs://${
+          this.codeBucketKey ? String(this.envValues(this.env)[this.codeBucketKey] ?? "YOUR-CODE-BUCKET") : "YOUR-CODE-BUCKET"
+        }/scripts/   # code bucket for ${this.env}; repeat per env`,
         "```",
         "",
       );

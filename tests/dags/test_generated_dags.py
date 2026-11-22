@@ -27,7 +27,46 @@ DAG_FILES = sorted(GENERATED.glob("*/dags/*.py"))
 ENVS = ("dev", "stg", "prd")
 REQUIRED_LABELS = {"env", "team", "owner", "cost_center", "dag_id"}
 LABEL_VALUE_RE = re.compile(r"^[\w-]{0,63}$")
-LABELLED_OPERATOR_PREFIXES = ("BigQuery", "Dataproc", "Dataflow")
+# Operators that create billable GCP jobs/resources and must carry LABELS.
+LABELLED_OPERATORS = {
+    "BigQueryInsertJobOperator",
+    "BigQueryCheckOperator",
+    "BigQueryValueCheckOperator",
+    "BigQueryIntervalCheckOperator",
+    "BigQueryColumnCheckOperator",
+    "BigQueryTableCheckOperator",
+    "DataprocCreateClusterOperator",
+    "DataprocSubmitJobOperator",
+    "DataprocCreateBatchOperator",
+    "DataflowTemplatedJobStartOperator",
+    "DataflowStartFlexTemplateOperator",
+}
+
+
+class _XComStub(str):
+    """Stand-in for XCom values in rendering tests: renders as text, supports [] and .attr."""
+
+    def __new__(cls, value="xcom-value"):
+        return super().__new__(cls, value)
+
+    def __getitem__(self, key):
+        return _XComStub(f"xcom-{key}")
+
+    def __getattr__(self, key):
+        if key.startswith("__"):
+            raise AttributeError(key)
+        return _XComStub(f"xcom-{key}")
+
+
+class _TaskInstanceStub:
+    try_number = 1
+
+    def __init__(self, task):
+        self.task_id = task.task_id
+        self.dag_id = task.dag_id
+
+    def xcom_pull(self, *args, **kwargs):
+        return _XComStub()
 
 
 def _bundle_id(path: Path) -> str:
@@ -71,9 +110,16 @@ def _context(dag, task, logical_date) -> dict[str, Any]:
     from airflow import macros
     from airflow.utils.context import VariableAccessor
 
+    ti = _TaskInstanceStub(task)
     return {
         "dag": dag,
         "task": task,
+        "ti": ti,
+        "task_instance": ti,
+        "dag_run": type("DagRunStub", (), {"run_id": "scheduled__test", "conf": {}})(),
+        "prev_ds": logical_date.subtract(days=1).to_date_string(),
+        "next_ds": logical_date.add(days=1).to_date_string(),
+        "ts_nodash_with_tz": logical_date.format("YYYYMMDDTHHmmssZZ"),
         "params": {k: task.params[k] for k in task.params},
         "ds": logical_date.to_date_string(),
         "ds_nodash": logical_date.format("YYYYMMDD"),
@@ -93,12 +139,24 @@ def _context(dag, task, logical_date) -> dict[str, Any]:
 
 
 def _labels(task) -> dict | None:
+    """Find the GCP labels an operator applies, wherever that operator keeps them."""
     labels = getattr(task, "labels", None)
     if labels:
         return labels
-    configuration = getattr(task, "configuration", None)
-    if isinstance(configuration, dict):
-        return configuration.get("labels")
+    for attr in ("configuration", "job", "batch"):
+        value = getattr(task, attr, None)
+        if isinstance(value, dict) and value.get("labels"):
+            return value["labels"]
+    environment = getattr(task, "environment", None)  # Dataflow classic template
+    if isinstance(environment, dict) and environment.get("additionalUserLabels"):
+        return environment["additionalUserLabels"]
+    body = getattr(task, "body", None)  # Dataflow flex template
+    if isinstance(body, dict):
+        env = body.get("launchParameter", body.get("launch_parameter", {})).get(
+            "environment", {}
+        )
+        if env.get("additionalUserLabels"):
+            return env["additionalUserLabels"]
     return None
 
 
@@ -160,7 +218,7 @@ def test_dag_standards(dag_file: Path, monkeypatch):
         assert task.retry_delay is not None, f"{where}: retry_delay"
         assert task.on_failure_callback, f"{where}: on_failure_callback"
 
-        if type(task).__name__.startswith(LABELLED_OPERATOR_PREFIXES):
+        if type(task).__name__ in LABELLED_OPERATORS:
             labels = _labels(task)
             assert labels, f"{where}: GCP labels are required"
             missing = REQUIRED_LABELS - set(labels)

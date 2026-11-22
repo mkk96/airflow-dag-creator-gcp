@@ -118,5 +118,6 @@ describe("registry", () => {
     const ids = [...SCENARIOS.map((s) => s.id), ...PLANNED_SCENARIOS.map((s) => s.id)];
     expect(new Set(ids).size).toBe(ids.length);
     expect(SCENARIOS.length + PLANNED_SCENARIOS.length).toBe(14);
+    expect(SCENARIOS.length).toBe(14);
   });
 });

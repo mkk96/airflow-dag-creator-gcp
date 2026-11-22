@@ -32,6 +32,10 @@ extended_capitalisation_policy = upper
 [sqlfluff:templater:jinja:context]
 ds = 2024-01-15
 ds_nodash = 20240115
+ts = 2024-01-15T00:00:00+00:00
+ts_nodash = 20240115T000000
+data_interval_start = 2024-01-15T00:00:00+00:00
+data_interval_end = 2024-01-16T00:00:00+00:00
 cfg_var = dev_example
 cfg = {"project_id": "my-project", "dataset": "my_dataset", "source_bucket": "my-bucket"}
 params = {"table": "orders"}

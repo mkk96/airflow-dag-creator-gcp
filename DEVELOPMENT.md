@@ -6,8 +6,7 @@ For contributors working on the code of **Airflow DAG Creator for GCP**. To *use
 
 | # | Scenario | Status |
 |---|---|---|
-| 1 | GCS → BigQuery load (CSV / JSON / Parquet / Avro) | ✅ Available |
-| 2–14 | BigQuery SQL, BQ → GCS, BQ copy, sensor → load → archive, Dataflow, Dataproc, Dataproc Serverless, Cloud SQL, Cloud Run / Functions, Pub/Sub, DQ checks, Dataform, full ELT | Planned (see [`src/scenarios/planned.ts`](src/scenarios/planned.ts)) |
+| 1–14 | All 14 scenarios: GCS → BQ, GCS sensor → load → archive, Cloud SQL → BQ, BQ SQL, BQ → GCS, BQ copy, Dataflow, Dataproc, Dataproc Serverless, Cloud Run / Functions, Pub/Sub, DQ checks, Dataform, full ELT | ✅ Available (one file each in `src/scenarios/`) |
 
 ## What the generated DAGs look like
 
@@ -63,7 +62,7 @@ bash scripts/test-dags.sh            # Docker: same steps as CI
 To run them without Docker (Python 3.11):
 
 ```bash
-pip install "apache-airflow==2.10.5" "apache-airflow-providers-google==12.0.0" pytest \
+pip install "apache-airflow==2.10.5" "apache-airflow-providers-google==12.0.0" apache-airflow-providers-apache-beam apache-airflow-providers-openlineage pytest \
   --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.11.txt
 pytest tests/dags
 pip install -r requirements-lint.txt   # preferably in a separate venv

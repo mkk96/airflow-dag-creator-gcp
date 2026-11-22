@@ -76,12 +76,16 @@ jobs:
           name: generated-dags
           path: generated/
 
-      - name: Install Airflow + Google provider with the official constraints file
+      # The beam + openlineage providers are imported by the Google provider's Dataflow/Dataproc
+      # modules; Composer images ship them, so CI installs them too.
+      - name: Install Airflow + Google providers with the official constraints file
         run: |
           python -m pip install --upgrade pip
           pip install \
             "apache-airflow==${{ steps.rt.outputs.airflow }}" \
             "apache-airflow-providers-google==${{ steps.rt.outputs.google }}" \
+            apache-airflow-providers-apache-beam \
+            apache-airflow-providers-openlineage \
             pytest \
             --constraint "${{ steps.rt.outputs.constraints }}"
           airflow version

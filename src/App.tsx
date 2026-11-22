@@ -1,46 +1,65 @@
+import { CircleCheck, CircleX, Lock, RotateCcw, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CodePreview } from "./components/CodePreview";
 import { DynamicForm } from "./components/DynamicForm";
 import { ScenarioPicker } from "./components/ScenarioPicker";
 import { Toolbar } from "./components/Toolbar";
-import { GENERATOR_NAME, RUNTIME, runtimeLabel } from "./config/runtime";
+import { GENERATOR_NAME, RUNTIME } from "./config/runtime";
 import { buildZip, dagFile, downloadBlob, downloadText } from "./lib/bundle";
 import { exportConfig, importConfig } from "./lib/configIO";
 import { suggestNames } from "./lib/suggest";
-import { defaultParams } from "./scenarios/common";
+import { allFields, defaultParams, isVisible } from "./scenarios/common";
 import { getScenario, SCENARIOS } from "./scenarios/registry";
 import type { GeneratedBundle, ParamValue, Params, Scenario } from "./scenarios/types";
 import { countIssues, validateParams } from "./validation/validate";
 
 const STORAGE_KEY = (id: string) => `dag-creator:v1:${id}`;
+const LAST_SCENARIO_KEY = "dag-creator:v1:last-scenario";
+
+function storageGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function storageSet(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable: ignore */
+  }
+}
 
 /** Restore the last form for a scenario (per-browser convenience only). */
 function loadSaved(s: Scenario): Params {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY(s.id));
+    const raw = storageGet(STORAGE_KEY(s.id));
     if (raw) return importConfig(raw).params;
   } catch {
-    /* storage unavailable or stale: fall back to defaults */
+    /* stale or invalid: fall back to defaults */
   }
   return defaultParams(s);
 }
 
-function save(s: Scenario, p: Params) {
-  try {
-    localStorage.setItem(STORAGE_KEY(s.id), exportConfig(s, p));
-  } catch {
-    /* ignore */
-  }
+function initialScenario(): Scenario {
+  const id = storageGet(LAST_SCENARIO_KEY);
+  return (id && getScenario(id)) || SCENARIOS[0];
 }
 
 export default function App() {
-  const [scenarioId, setScenarioId] = useState(SCENARIOS[0].id);
+  const [scenarioId, setScenarioId] = useState(() => initialScenario().id);
   const scenario = getScenario(scenarioId) ?? SCENARIOS[0];
   const [params, setParams] = useState<Params>(() => loadSaved(scenario));
   const [activePath, setActivePath] = useState("");
   const [toast, setToast] = useState<{ text: string; kind: "ok" | "error" } | null>(null);
 
-  useEffect(() => save(scenario, params), [scenario, params]);
+  useEffect(() => {
+    storageSet(STORAGE_KEY(scenario.id), exportConfig(scenario, params));
+    storageSet(LAST_SCENARIO_KEY, scenario.id);
+  }, [scenario, params]);
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3500);
@@ -67,7 +86,7 @@ export default function App() {
   const onSuggest = () => {
     const s = suggestNames(scenario, params);
     setParams((p) => ({ ...p, ...s }) as Params);
-    notify(`Filled ${Object.keys(s).join(", ") || "nothing (set org, env and domain first)"}.`);
+    notify(Object.keys(s).length ? `Suggested: ${Object.keys(s).join(", ")}` : "Set org, env and domain first.");
   };
 
   const onScenario = (id: string) => {
@@ -78,15 +97,33 @@ export default function App() {
     setActivePath("");
   };
 
+  /** Scroll to the first field with an error (or warning) and flash it. */
+  const onShowIssues = () => {
+    const visible = allFields(scenario).filter((f) => isVisible(f, params));
+    const target =
+      visible.find((f) => validation[f.key]?.errors.length) ?? visible.find((f) => validation[f.key]?.warnings.length);
+    if (!target) return;
+    const section = document.getElementById(`section-${target.section}`) as HTMLDetailsElement | null;
+    if (section) section.open = true;
+    const el = document.getElementById(`field-${target.key}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.remove("flash-error");
+    void el.offsetWidth;
+    el.classList.add("flash-error");
+  };
+
   const onDownloadPy = () => {
     if (!bundle) return;
     downloadText(dagFile(bundle).content, `${bundle.dagId}.py`, "text/x-python");
+    notify(`Downloaded ${bundle.dagId}.py`);
   };
 
   const onDownloadZip = async () => {
     if (!bundle) return;
     try {
       downloadBlob(await buildZip(bundle), `${bundle.dagId}.zip`);
+      notify(`Downloaded ${bundle.dagId}.zip`);
     } catch (e) {
       notify((e as Error).message, "error");
     }
@@ -96,7 +133,7 @@ export default function App() {
     if (!bundle) return;
     try {
       await navigator.clipboard.writeText(dagFile(bundle).content);
-      notify("DAG copied to clipboard.");
+      notify("DAG copied to clipboard");
     } catch {
       notify("Clipboard is not available in this browser.", "error");
     }
@@ -113,7 +150,7 @@ export default function App() {
       setScenarioId(r.scenario.id);
       setParams(r.params);
       setActivePath("");
-      notify(r.notes.length ? `Imported with notes: ${r.notes.join(" ")}` : "Config imported.");
+      notify(r.notes.length ? `Imported with notes: ${r.notes.join(" ")}` : "Config imported");
     } catch (e) {
       notify((e as Error).message, "error");
     }
@@ -124,38 +161,63 @@ export default function App() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-100 lg:h-screen">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
-        <div className="flex items-center gap-2.5">
-          <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-7 w-7" />
-          <h1 className="text-base font-semibold text-slate-900 sm:text-lg">{GENERATOR_NAME}</h1>
+    <div className="flex min-h-screen flex-col lg:h-screen">
+      <header className="relative overflow-hidden bg-[#0b1020] text-white">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-60"
+          style={{
+            background:
+              "radial-gradient(40rem 12rem at 15% 0%, rgb(99 102 241 / 0.45), transparent 70%), radial-gradient(30rem 10rem at 85% 0%, rgb(14 165 233 / 0.35), transparent 70%)",
+          }}
+          aria-hidden
+        />
+        <div className="relative flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3.5 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-sky-500 shadow-lg shadow-indigo-500/30">
+              <Workflow className="h-5 w-5" strokeWidth={2.2} />
+            </div>
+            <div className="leading-tight">
+              <h1 className="text-[15px] font-semibold tracking-tight sm:text-base">{GENERATOR_NAME}</h1>
+              <p className="text-[11.5px] text-slate-400">Production-ready Cloud Composer DAGs in seconds</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium">
+            {[
+              RUNTIME.composerTargets,
+              `Airflow ${RUNTIME.airflowVersion}`,
+              `Python ${RUNTIME.pythonVersion}`,
+              `providers-google ${RUNTIME.googleProviderVersion}`,
+            ].map((chip) => (
+              <span key={chip} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-300">
+                {chip}
+              </span>
+            ))}
+          </div>
+          <div className="ml-auto flex items-center gap-1.5 text-[11.5px] text-slate-400">
+            <Lock className="h-3.5 w-3.5" />
+            Runs entirely in your browser · v{RUNTIME.generatorVersion}
+          </div>
         </div>
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-          {runtimeLabel()} · providers-google {RUNTIME.googleProviderVersion}
-        </span>
-        <span className="ml-auto text-xs text-slate-400">v{RUNTIME.generatorVersion} · runs entirely in your browser</span>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(440px,5fr)_7fr]">
-        <aside className="flex min-h-0 flex-col gap-3 lg:overflow-y-auto lg:pr-1">
+      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(460px,5fr)_7fr]">
+        <aside className="scroll-thin flex min-h-0 min-w-0 flex-col gap-3 lg:overflow-x-hidden lg:overflow-y-auto lg:pr-1.5">
           <ScenarioPicker scenario={scenario} onChange={onScenario} />
-          <DynamicForm
-            scenario={scenario}
-            params={params}
-            validation={validation}
-            onChange={onChange}
-            onSuggest={onSuggest}
-          />
-          <button onClick={onReset} className="self-start px-1 pb-2 text-xs text-slate-500 underline hover:text-slate-800">
-            Reset to defaults
+          <DynamicForm scenario={scenario} params={params} validation={validation} onChange={onChange} onSuggest={onSuggest} />
+          <button
+            onClick={onReset}
+            className="inline-flex items-center gap-1.5 self-start px-1 pb-3 text-xs font-medium text-slate-500 transition hover:text-slate-800"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Reset to defaults
           </button>
         </aside>
 
-        <section className="flex min-h-[70vh] flex-col gap-3 lg:min-h-0">
+        <section className="flex min-h-[75vh] flex-col gap-3 lg:min-h-0">
           <Toolbar
             bundle={bundle}
             errors={errors}
             warnings={warnings}
+            onShowIssues={onShowIssues}
             onDownloadPy={onDownloadPy}
             onDownloadZip={onDownloadZip}
             onCopy={onCopy}
@@ -163,9 +225,7 @@ export default function App() {
             onImport={onImport}
           />
           {genError ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              Could not generate the DAG: {genError}
-            </div>
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Could not generate the DAG: {genError}</div>
           ) : (
             bundle && <CodePreview files={bundle.files} activePath={activePath} onSelect={setActivePath} />
           )}
@@ -175,10 +235,15 @@ export default function App() {
       {toast && (
         <div
           role="status"
-          className={`fixed right-4 bottom-4 max-w-md rounded-lg px-4 py-2.5 text-sm shadow-lg ${
-            toast.kind === "ok" ? "bg-slate-900 text-white" : "bg-red-600 text-white"
+          className={`animate-pop-in fixed right-4 bottom-4 z-50 flex max-w-md items-start gap-2 rounded-xl px-4 py-3 text-sm font-medium shadow-2xl ring-1 ${
+            toast.kind === "ok" ? "bg-slate-900 text-white ring-white/10" : "bg-red-600 text-white ring-red-500"
           }`}
         >
+          {toast.kind === "ok" ? (
+            <CircleCheck className="mt-px h-4 w-4 shrink-0 text-emerald-400" />
+          ) : (
+            <CircleX className="mt-px h-4 w-4 shrink-0" />
+          )}
           {toast.text}
         </div>
       )}
