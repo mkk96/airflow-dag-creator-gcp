@@ -1,0 +1,16 @@
+node_modules/
+dist/
+generated/
+coverage/
+.venv/
+.lint-venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+airflow-home/
+*.log
+.DS_Store
+.env
+.env.*
+.claude/settings.local.json

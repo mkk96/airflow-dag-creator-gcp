@@ -1,0 +1,113 @@
+name: Test
+
+on:
+  pull_request:
+  workflow_call: # reused by deploy.yml so main only deploys when this passes
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: App — typecheck, lint, unit tests, build, generate samples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Generate every scenario sample into generated/
+        run: npm run generate
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: generated-dags
+          path: generated/
+          if-no-files-found: error
+          retention-days: 7
+
+  dags:
+    name: Generated DAGs — Airflow DagBag, ruff, sqlfluff
+    needs: app
+    runs-on: ubuntu-latest
+    env:
+      AIRFLOW_HOME: ${{ github.workspace }}/airflow-home
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read target runtime (runtime.config.json)
+        id: rt
+        run: |
+          airflow=$(jq -r .airflowVersion runtime.config.json)
+          python=$(jq -r .pythonVersion runtime.config.json)
+          google=$(jq -r .googleProviderVersion runtime.config.json)
+          url=$(jq -r .constraintsUrlTemplate runtime.config.json)
+          url=${url//\{airflowVersion\}/$airflow}
+          url=${url//\{pythonVersion\}/$python}
+          {
+            echo "airflow=$airflow"
+            echo "python=$python"
+            echo "google=$google"
+            echo "constraints=$url"
+          } >> "$GITHUB_OUTPUT"
+          echo "Airflow $airflow · Python $python · providers-google $google"
+          echo "Constraints: $url"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ steps.rt.outputs.python }}
+          cache: pip
+          cache-dependency-path: |
+            runtime.config.json
+            requirements-lint.txt
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: generated-dags
+          path: generated/
+
+      - name: Install Airflow + Google provider with the official constraints file
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            "apache-airflow==${{ steps.rt.outputs.airflow }}" \
+            "apache-airflow-providers-google==${{ steps.rt.outputs.google }}" \
+            pytest \
+            --constraint "${{ steps.rt.outputs.constraints }}"
+          airflow version
+          pip show apache-airflow-providers-google | head -2
+
+      - name: Initialise Airflow metadata DB (sqlite)
+        run: airflow db migrate
+
+      - name: pytest — py_compile, DagBag import (dev/stg/prd), cycles, template rendering, standards
+        run: pytest tests/dags -v
+
+      - name: Install lint tools (isolated from Airflow's constraints)
+        run: |
+          python -m venv .lint-venv
+          .lint-venv/bin/pip install -r requirements-lint.txt
+
+      - name: ruff check
+        run: .lint-venv/bin/ruff check generated tests
+
+      - name: ruff format --check
+        run: .lint-venv/bin/ruff format --check generated tests
+
+      - name: sqlfluff lint (bigquery dialect)
+        run: |
+          if compgen -G "generated/*/dags/sql/*/*.sql" > /dev/null; then
+            .lint-venv/bin/sqlfluff lint generated
+          else
+            echo "No generated SQL files."
+          fi

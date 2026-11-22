@@ -1,0 +1,3 @@
+# Linters for GENERATED code (installed in a separate venv from Airflow).
+ruff==0.17.6
+sqlfluff==4.5.0

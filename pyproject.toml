@@ -1,0 +1,31 @@
+# Python tooling for validating GENERATED DAGs (the app itself is TypeScript).
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+extend-exclude = ["node_modules", "dist"]
+
+[tool.ruff.lint]
+select = [
+  "E",      # pycodestyle errors
+  "W",      # pycodestyle warnings
+  "F",      # pyflakes
+  "I",      # isort
+  "B",      # bugbear
+  "UP",     # pyupgrade
+  "N",      # pep8-naming
+  "C4",     # comprehensions
+  "SIM",    # simplify
+  "AIR0",   # airflow 2: task variable name matches task_id, explicit schedule
+            # (AIR3xx are Airflow 3 migration rules; target is Airflow 2.x)
+]
+ignore = [
+  "E501",   # long string literals are allowed; the formatter owns line length
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/dags"]
+addopts = "-ra"

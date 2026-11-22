@@ -1,0 +1,8 @@
+{
+  "generatorVersion": "0.1.0",
+  "airflowVersion": "2.10.5",
+  "pythonVersion": "3.11",
+  "googleProviderVersion": "12.0.0",
+  "composerTargets": "Cloud Composer 2 / 3",
+  "constraintsUrlTemplate": "https://raw.githubusercontent.com/apache/airflow/constraints-{airflowVersion}/constraints-{pythonVersion}.txt"
+}
