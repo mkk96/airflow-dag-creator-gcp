@@ -1,134 +1,152 @@
 # Airflow DAG Creator for GCP
 
-A static web app that generates production-ready Airflow DAGs for **Cloud Composer 2 / 3**.
-Pick a scenario, fill in the form, preview the generated Python live, and download a `.py`
-(or a `.zip` in the Composer bucket layout) that you can drop into the DAGs bucket without edits.
+**Open the app: https://mkk96.github.io/airflow-dag-creator-gcp/**
 
-- Runs entirely in the browser: no backend, and nothing leaves your machine.
-- Targets **Airflow 2.10.5**, **Python 3.11** and **apache-airflow-providers-google 12.0.0** (set in [`runtime.config.json`](runtime.config.json)).
-- Every scenario's samples are compiled, imported with Airflow's `DagBag`, template-rendered and linted (ruff, sqlfluff) in CI.
+Build production-ready Airflow DAGs for **Cloud Composer 2 / 3** without writing them by hand. Pick a scenario, fill in a form, watch the Python DAG update as you type, and download a file you can drop straight into your Composer DAGs bucket.
 
-## Scenarios
+- **Target:** Airflow 2.10, Python 3.11, `apache-airflow-providers-google` 12.0.0, the versions in Composer 2 / 3 images.
+- **Private:** everything runs in your browser. Nothing you type is sent anywhere.
+- **Tested:** every scenario is compiled, imported by Airflow and linted (ruff, sqlfluff) before each release.
 
-| # | Scenario | Status |
+---
+
+## Quick start
+
+1. Open the app and choose a **DAG scenario** from the dropdown at the top left.
+2. Fill in the form sections (described below). Defaults are sensible, so you usually only change names, buckets and datasets.
+3. In **Environment, naming & labels**, click **✨ Suggest names** to fill in the DAG id, bucket and dataset names from your org, environment and domain.
+4. Fix anything marked in **red**. **Amber** items are suggestions.
+5. Check the generated code in the preview on the right. Use the file tabs to see the DAG, any SQL files, the Variables file and the deployment README.
+6. Click **⬇ .zip**, or **⬇ .py** for simple DAGs, and deploy it (see [Deploy the DAG to Composer](#deploy-the-dag-to-composer)).
+
+## Available scenarios
+
+| Scenario | What it builds |
+|---|---|
+| **GCS → BigQuery load** | Loads CSV, newline-delimited JSON, Parquet or Avro files from a bucket into a BigQuery table, idempotently into the run's date partition, with an optional data quality check. |
+
+Coming soon (shown greyed out in the dropdown): BigQuery SQL transformation, BigQuery → GCS export, BigQuery table copy, GCS sensor → load → archive, Dataflow templates, Dataproc cluster jobs, Dataproc Serverless, Cloud SQL → BigQuery, Cloud Run / Cloud Functions, Pub/Sub, BigQuery data quality suites, Dataform, and a full ELT pipeline.
+
+## Filling in the form
+
+Sections can be collapsed. The badge on a section shows how many errors (red) or warnings (amber) it contains.
+
+### DAG
+- **DAG id**: also the file name (`<dag_id>.py`). Suggested format: `{domain}_{source}_to_{target}_{frequency}`, e.g. `sales_gcs_to_bq_daily`.
+- **Description, Owner, Alert emails, Tags**: appear in the Airflow UI and in the DAG's documentation panel. The owner also becomes a cost label.
+
+### Environment, naming & labels
+- **Environment config source**: where the DAG gets environment-specific values (project, buckets, datasets, service accounts):
+  - **Per-env config dict** (default): the values for dev, stg and prd are written into the DAG. Nothing else to set up.
+  - **Airflow Variables**: the values go in a JSON file that you import into Airflow, one Variable per environment. Choose this if you manage config outside the code.
+- **Values below are for env**: the environment the values you type belong to. Values for the other environments are derived by swapping the env code, e.g. `acme-dev-sales-landing` becomes `acme-prd-sales-landing`. Check the **Environment values** table in the generated README and edit it if your environments don't follow that pattern.
+- **Org code, Domain**: used by **✨ Suggest names**.
+- **Team, Cost center**: applied as GCP labels to every BigQuery job, so you can track cost per team.
+
+### Schedule
+- A preset (`@daily`, `@hourly`, …), **None** for manual or externally triggered runs, or **Custom cron expression**.
+- **Start date** and **Timezone**, plus **Catchup** (off by default), **Max active runs** (1 by default) and a **DAG run timeout**.
+
+### Retries, timeouts & alerts
+- Retries, retry delay with optional exponential backoff, a per-task execution timeout, and **Email on failure** (needs email configured in Composer).
+
+### GCP connection
+- **GCP connection id**: usually `google_cloud_default`.
+- **Project id**: the project that runs the jobs and owns the destination table.
+- **Location**: BigQuery location such as `US`, `EU` or `northamerica-northeast1`.
+- **Impersonation chain** (optional): service account(s) to run as. No keys are ever put in the DAG.
+- **Use deferrable operators**: frees Airflow worker slots while BigQuery jobs run. Requires the **triggerer** to be enabled in your Composer environment. Untick it if yours doesn't have one.
+
+### GCS → BigQuery fields
+- **Source bucket**: bucket name only, without `gs://`.
+- **Source object paths**: one per line, inside the bucket. Use wildcards and Airflow date macros so each run reads only its own files, e.g. `landing/orders/{{ ds_nodash }}/*.csv`.
+- **File format** and its options: header rows, delimiter, quote, encoding, null marker, bad-record tolerance, and so on.
+- **Schema source** (CSV / JSON): **Autodetect**, **Schema file** (paste or upload the output of `bq show --schema --format=prettyjson`), or **Use the existing table's schema**. Parquet and Avro carry their own schema.
+- **Dataset, Table, Partitioning**: with daily or monthly partitioning, each run loads into its own partition (`orders$20240301`). Re-running a day replaces only that day.
+- **Write disposition**: `WRITE_TRUNCATE` (recommended, safe to re-run), `WRITE_APPEND` (re-runs create duplicates, so you'll see a warning) or `WRITE_EMPTY`.
+- **Clustering columns**, **Create disposition**, **Schema update options**.
+- **Post-load check**: **Row count > 0** for the loaded partition, a **Custom SQL check** (any query returning one row whose values must all be true), or **None**.
+
+### Errors vs warnings
+- **Red errors** break an official GCP or Airflow rule, such as invalid bucket names, bad cron syntax or invalid project ids. Downloads are disabled until they're fixed.
+- **Amber warnings** flag a naming convention or a risky choice, e.g. a non-standard name or an append that isn't idempotent. You can still download.
+
+## Downloading
+
+| Button | Gives you | Use when |
 |---|---|---|
-| 1 | GCS → BigQuery load (CSV / JSON / Parquet / Avro) | ✅ Available |
-| 2–14 | BigQuery SQL, BQ → GCS, BQ copy, sensor → load → archive, Dataflow, Dataproc, Dataproc Serverless, Cloud SQL, Cloud Run / Functions, Pub/Sub, DQ checks, Dataform, full ELT | Planned (see [`src/scenarios/planned.ts`](src/scenarios/planned.ts)) |
+| **⬇ .zip** | The DAG, its SQL files, the Variables file (if used) and a deployment README, laid out like your Composer bucket | The DAG has SQL files or uses Airflow Variables. The app highlights this button when needed. |
+| **⬇ .py** | Just `<dag_id>.py` | Simple DAGs with no extra files |
+| **Copy** | The DAG code on your clipboard | Pasting into your own repo |
 
-## What the generated DAGs look like
-
-- `with DAG(...) as dag:`, with a header comment naming the scenario and generator version, plus a `doc_md` that lists the pipeline steps, owner and contact.
-- `catchup=False`, `max_active_runs=1`, `dagrun_timeout`, tags.
-- `default_args` set retries, `retry_delay`, exponential backoff, `execution_timeout` and an `on_failure_callback`.
-- Env-specific values (project, buckets, datasets, service accounts) are never written into task logic. The DAG reads `DEPLOY_ENV` (dev / stg / prd), and Jinja resolves the values at run time from either:
-  - a **per-env config dict** in the DAG (`{{ cfg.<key> }}`, the drop-in default), or
-  - an **Airflow Variable** per env (`{{ var.json.get(cfg_var).<key> }}`, imported from `config/<dag_id>_variables.json`).
-- Parse time runs no `Variable.get()`, API calls or database queries.
-- Loads are idempotent: `WRITE_TRUNCATE` into the run's partition (`table$YYYYMMDD` / `table$YYYYMM`).
-- `deferrable=True` is set where supported, labels (`env, team, owner, cost_center, dag_id`) go on every BigQuery job, and related tasks are grouped in a `TaskGroup`.
-- SQL lives in `.sql` files under `dags/sql/<dag_id>/` and is loaded through `template_searchpath`.
-
-When a DAG needs more than its `.py` (SQL files, scripts, Variables), download the `.zip`:
+What's inside the `.zip`:
 
 ```
 <dag_id>.zip
 ├── dags/
 │   ├── <dag_id>.py
 │   └── sql/<dag_id>/01_check_<table>_row_count.sql
-├── scripts/<dag_id>/          (future scenarios: upload to the code bucket)
-├── config/<dag_id>_variables.json
-└── README.md                  (gcloud commands, Variables, IAM roles)
+├── config/<dag_id>_variables.json     (only with "Airflow Variables")
+└── README.md                          (commands, environment values, IAM roles for this DAG)
 ```
 
-## Run locally
+## Deploy the DAG to Composer
 
-Requires Node 26 (see `.nvmrc`).
+Each download includes a README with these commands already filled in for your DAG.
 
 ```bash
-npm install
-npm run dev          # http://localhost:5173
+COMPOSER_ENV="your-composer-env"
+COMPOSER_REGION="your-region"
+DAGS_PREFIX=$(gcloud composer environments describe "$COMPOSER_ENV" \
+  --location "$COMPOSER_REGION" --format="value(config.dagGcsPrefix)")
 ```
 
-| Command | What it does |
+1. **Tell each Composer environment which env it is.** Do this once per environment. The value is `dev`, `stg` or `prd`.
+   ```bash
+   gcloud composer environments update "$COMPOSER_ENV" --location "$COMPOSER_REGION" \
+     --update-env-variables=DEPLOY_ENV=prd
+   ```
+2. **Airflow Variables mode only:** import the Variables file.
+   ```bash
+   gcloud storage cp config/<dag_id>_variables.json "${DAGS_PREFIX%/dags}/data/"
+   gcloud composer environments run "$COMPOSER_ENV" --location "$COMPOSER_REGION" \
+     variables import -- /home/airflow/gcs/data/<dag_id>_variables.json
+   ```
+3. **Upload the DAG** and its SQL folder. Run this from the unzipped folder:
+   ```bash
+   gcloud storage cp --recursive dags/* "$DAGS_PREFIX/"
+   ```
+4. **Grant IAM roles** to the Composer service account, or to the impersonated one:
+   - `roles/bigquery.jobUser` on the project that runs the jobs
+   - `roles/bigquery.dataEditor` on the destination dataset
+   - `roles/storage.objectViewer` on the source bucket
+   - with impersonation: `roles/iam.serviceAccountTokenCreator` on the impersonated service account
+
+The DAG appears in the Airflow UI within a minute or two.
+
+## Save and reuse your settings
+
+- **Export JSON** saves the whole form to a file. Commit it next to your DAG to regenerate it later.
+- **Import JSON** loads a saved file back into the form.
+- The app also remembers your last form in this browser. **Reset to defaults** at the bottom of the form clears it.
+
+## What the generated DAGs follow
+
+- Use `with DAG(...) as dag:`, with clear `verb_object` task ids, explicit dependencies and a documentation panel (owner, contact, pipeline steps).
+- Default to `catchup=False` and `max_active_runs=1`, with retries plus exponential backoff, timeouts and a failure callback.
+- Do no slow work when Airflow parses the file. Values are resolved when tasks run.
+- Re-run safely: partition overwrite instead of blind appends.
+- Label every BigQuery job (`env`, `team`, `owner`, `cost_center`, `dag_id`) for cost tracking.
+- Keep SQL in separate `.sql` files, not inside the Python.
+- Contain no credentials. They use only the Airflow connection and optional impersonation.
+
+## Troubleshooting
+
+| Symptom | Fix |
 |---|---|
-| `npm run dev` | Dev server with hot reload |
-| `npm run build` | Type-check and build the static site into `dist/` |
-| `npm test` | Unit tests (vitest): escaping, validators, naming, scenario contract |
-| `npm run lint` / `npm run typecheck` | ESLint / TypeScript |
-| `npm run generate` | Write every scenario sample into `generated/` |
-
-### Validate generated DAGs locally
-
-Airflow doesn't officially support native Windows, so use Linux, macOS, WSL or Docker (CI runs these checks on every PR). In practice the pytest suite also runs on native Windows Python with a warning.
-
-```bash
-npm run generate
-bash scripts/test-dags.sh            # Docker: same steps as CI
-```
-
-To run them without Docker (Python 3.11):
-
-```bash
-pip install "apache-airflow==2.10.5" "apache-airflow-providers-google==12.0.0" pytest \
-  --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.11.txt
-pytest tests/dags
-pip install -r requirements-lint.txt   # preferably in a separate venv
-ruff check generated tests && ruff format --check generated tests && sqlfluff lint generated
-```
-
-The pytest suite ([`tests/dags/test_generated_dags.py`](tests/dags/test_generated_dags.py)) checks that:
-1. `py_compile` succeeds on every generated DAG
-2. `DagBag` imports it with no import errors, under `DEPLOY_ENV` = dev, stg and prd
-3. there are no cycles, and `dag_id` matches the file name
-4. every templated field renders, with Variables supplied as `AIRFLOW_VAR_*`
-5. the standards hold: labels, owner, retries, timeouts, failure callback, doc_md, tags, and sensor mode and timeout
-
-## Add a scenario
-
-1. Create `src/scenarios/<name>.ts` that exports a `Scenario` (see [`src/scenarios/types.ts`](src/scenarios/types.ts)):
-   - `id`, `title`, `description`, `naming: { source, target }`
-   - `sections` and `fields`. Common fields are added automatically, so don't repeat them. Mark env-specific fields with `envSpecific: true`.
-   - `samples`: one or more named parameter sets that cover the variants. CI generates and tests every one.
-   - `generate(params)`: create a `DagContext`, add imports, build the tasks with the helpers in [`src/lib/python.ts`](src/lib/python.ts), register SQL with `ctx.addSql()`, and return `ctx.assemble({...})`.
-2. Register it in [`src/scenarios/registry.ts`](src/scenarios/registry.ts) and remove its entry from `planned.ts`.
-3. Run `npm test && npm run generate`, then the DAG checks above.
-
-Rules that also apply to scenarios: put user input into Python only through `pyStr` / `pyList` / `pyDict` / `pyCall` and the other helpers, and use `ctx.ref()` only in fields listed in the operator's `template_fields`. The full list is in [CLAUDE.md](CLAUDE.md).
-
-## Naming conventions
-
-All naming rules live in [`src/config/naming.ts`](src/config/naming.ts):
-
-- `OFFICIAL`: GCP and Airflow rules. A violation is an **error** and blocks download.
-- `TEAM`: your convention (patterns like `{org}-{env}-{domain}-{purpose}`, dataset layers, verbs, frequencies). A violation is a **warning**.
-
-To adopt your team's convention, edit `TEAM`. Scenario code doesn't change. **Suggest names** fills dag_id, buckets and datasets from org, env, domain, source/target and the schedule.
-
-## Deploy to GitHub Pages
-
-1. Push the repo to GitHub.
-2. Go to **Settings → Pages → Build and deployment → Source** and select **GitHub Actions**.
-3. Push to `main`. [`deploy.yml`](.github/workflows/deploy.yml) runs the full test workflow first and deploys only if it passes.
-
-Workflows:
-
-- [`test.yml`](.github/workflows/test.yml) runs on every pull request. It runs typecheck, lint, unit tests, build and sample generation. It then installs Airflow and providers-google using the official constraints file (versions from `runtime.config.json`) and runs pytest, ruff and sqlfluff.
-- [`deploy.yml`](.github/workflows/deploy.yml) runs on push to `main`. It runs `test.yml`, then builds with the Pages base path and deploys.
-
-## Change the target runtime
-
-Edit [`runtime.config.json`](runtime.config.json). The UI badge, the generated headers and CI's constraints URL all read from it. After bumping `airflowVersion`, set `googleProviderVersion` to the version pinned in the new constraints file. Otherwise CI's install fails, which is intentional.
-
-## Project layout
-
-```
-runtime.config.json          target runtime (single source of truth)
-src/config/                  naming.ts (all naming rules), runtime.ts, schedules.ts
-src/lib/python.ts            safe Python literal and expression emitter (ruff-format compatible)
-src/scenarios/               types, common (shared params, default_args, env config, assembly), scenarios
-src/validation/              field validators and form validation
-src/components/              React UI
-scripts/generate-samples.ts  writes generated/ for the tests
-tests/unit/                  vitest
-tests/dags/                  pytest against generated DAGs
-```
+| Download buttons are disabled | A section has red errors. Look for the red badge. |
+| `DEPLOY_ENV must be one of ('dev', 'stg', 'prd')` in Airflow | Set the `DEPLOY_ENV` environment variable on the Composer environment (step 1). |
+| A deferrable task stays in the *deferred* state | Enable the triggerer in Composer, or regenerate with **Use deferrable operators** unticked. |
+| `KeyError` / Variable not found when the task runs | Airflow Variables mode: import the Variables file (step 2). |
+| `TemplateNotFound` for a `.sql` file | Upload the whole `dags/` folder from the zip, including `sql/<dag_id>/`. |
+| No email alerts | Configure email (SendGrid / SMTP) in Composer, and add alert emails in the form. |

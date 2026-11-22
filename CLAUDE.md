@@ -36,6 +36,10 @@ that generates Cloud Composer DAGs in the browser. These rules are mandatory for
 - A bundle with SQL, scripts or Variables downloads as a `.zip` in the Composer layout: `dags/`, `dags/sql/<dag_id>/`, `scripts/<dag_id>/`, `config/<dag_id>_variables.json`, `README.md`.
 - Unique runtime resource names (Dataproc clusters, Dataflow / Cloud Run jobs) are lowercase with hyphens and include the dag_id and a run-date suffix.
 
+## Docs
+- `README.md` is the user guide for the hosted site (https://mkk96.github.io/airflow-dag-creator-gcp/). It covers using the app and deploying its output only, never local setup or code. When a scenario or field changes, update its section there.
+- Developer docs (local setup, tests, adding scenarios, CI/deploy) go in `DEVELOPMENT.md`.
+
 ## Checks before you finish
 ```bash
 npm run typecheck && npm run lint && npm test && npm run build && npm run generate
